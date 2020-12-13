@@ -3,14 +3,17 @@ title: 'Análise textual: Machado de Assis'
 author: "Mariana de Castro Pasqualini"
 date: "13/12/2020"
 output:
-  html_notebook
+  html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center', fig.width = 10, fig.height = 8)
 ```
 
 ## Motivação
+
+Eu sempre gostei bastante de ler livros literários e quantificar características de alguma obra sempre me pareceu bastante interessante! Atualmente, isso tem se tornado possível dado os contínuos trabalhos nos últimos anos com a língua portuguesa e a computação. Escolhi três obras de Machado de Assis, **Quincas Borba (1891)**, **Memórias Póstumas de Brás Cubas (1881)** e **Dom Casmurro (1899)**, por serem de extrema relevância para a literatura brasileira e terem um estilo bastante característico. 
+
 ### Versão do R e pacotes:
 
 ```{r packages, message=FALSE, warning=FALSE}
@@ -35,21 +38,334 @@ livros_machado <- gutenberg_download(c(55752, 55682, 54829))
 head(livros_machado, n = 10)
 ```
 
-Logo de início, conseguimos identificar que os caracteres especiais não foram lidos corretamente e que o formato do texto não parece adequado para análise. Além disso, é legal ter em mente que as primeiras linhas são o header do texto, ou seja, informações sobre o autor, publicação e editora, que não vão agregar na análise. Voltarei nisso mais adiante.
+Logo de início, conseguimos identificar que os caracteres especiais não foram lidos corretamente e que o formato do texto não parece o mais adequado. Além disso, é legal ter em mente que as primeiras linhas são o header do texto, ou seja, informações sobre o autor, publicação e editora, que não vão agregar na análise. Voltarei nisso mais adiante.
 
-Também fiz o download do modelo de tags de POS (_part of speech_), que usei para o processo de lemmatização e obtenção das tags de _adjetivo_, _substantivo_ etc.
+Também fiz o download do modelo de tags de POS (_part of speech_) do `udpipe`, que usei para o processo de lemmatização dos tokens e obtenção das tags de _adjetivo_, _substantivo_ etc.
 
-```{r udp-model}
+```{r udp-model, message=FALSE, warning=FALSE}
 udp_model <- udpipe_download_model(language = "portuguese")
 udp_model <- udpipe_load_model(udp_model)
 ```
 
-
 ### Preparando
+
+#### Identificando capítulos e caracteres especiais
+
+A primeira coisa que fiz foi identificar os capítulos de cada livro. Dividi em duas partes.
+
+Para **Quincas Borba** e **Memórias Póstumas de Brás Cubas**, todos os capítulos começam com "CAPITULO", ou seja, bem fácil de identificar! Só precisei trocar "primeiro" por "I" para seguir no padrão de números romanos. Os capítulos foram identificados por uma _expressão regular_ que identifica "CAPITULO" seguido de números romanos, conforme a estrutura do texto.  Se eu identificasse apenas números romanos em qualquer posição da string, algumas frases do texto seriam excluídas, pois o autor comenta alguns capítulos durante o texto.
+
+```{r chapters-1}
+livros_cap <- 
+  livros_machado %>% 
+  group_by(gutenberg_id) %>% 
+  mutate(text = replace(text, text == "CAPITULO PRIMEIRO", "CAPITULO I")) %>% 
+  filter(gutenberg_id != 55752) %>% 
+  mutate(chapter = cumsum(str_detect(text, regex("CAPITULO [MDCLXVI\\.]+$", 
+                                                 ignore_case = TRUE)))) %>% ungroup()
+```
+
+E como fica **Dom Casmurro**? 
+
+```{r chapters-2}
+livros <- livros_machado %>% 
+  filter(gutenberg_id == 55752) %>% 
+  mutate(chapter = cumsum(str_detect(text, regex("^[MDCLXVI\\.]+$", 
+                                                 ignore_case = TRUE)))) %>% rbind(livros_cap) %>% 
+  mutate(text = map(text, function(x) iconv(x, from = "ISO-8859-1", to = "UTF-8"))) %>% 
+  mutate(text = stringi::stri_trans_general(text, "Latin-ASCII")) %>% 
+  mutate(text = gsub("[^-0-9A-Za-z ]","",text)) %>% 
+  mutate(text = str_squish(text))
+```
+
+Identifiquei os capítulos de Dom Casmurro separadamente porque eles não têm "CAPITULO" na frente, apenas os números romanos no **início** da string.
+
+Além disso, no código acima eu também removi caracteres especiais como acentos e cedilha, além de retirar espaços em branco extras.
+
+#### Removendo header e footer dos livros
+
+Os livros do Projeto Gutenberg têm um _header_, que contêm o nome do autor/editora/ano, e o _footer_, que em geral contempla o índice do livro. Esse formato pode mudar de acordo com cada livro, mas aqui todas as obras têm essas informações e elas não são úteis para a análise. Removi da seguinte forma:
+
+```{r header-footer, warning=FALSE, message=FALSE}
+livros <- as.data.table(livros) %>% filter(chapter != 0)
+livros <- livros[, remove := .I %in% which(text == "FIM"):.N, by = gutenberg_id]
+livros <- livros[remove == FALSE]
+livros <- livros[-(16703:16876)] %>% select(-remove)
+```
+
+Com os capítulos identificados anteriormente, foi possível identificar que os capítulos **0** contemplavam o cabeçalho dos livros. Pensando no rodapé, todos os textos terminam com "FIM" então as linhas abaixo dessa string poderiam ser removidas. Deu certo para duas obras, mas uma delas tive que remover pelos números das linhas.
+
+#### Identificando stopwords
+
+```{r stopwords}
+stop_words <- stopwords::stopwords(language = "pt") %>% as.data.frame()
+colnames(stop_words) <- "word"
+stop_words <- 
+  stop_words %>% mutate(word = stringi::stri_trans_general(word, "Latin-ASCII")) %>%
+  add_row(word = c("elle", "ella", "tao", "capitulo", "d"))
+```
+
+As _stopwords_ são outros elementos que não contribuem para a análise: são palavras como "de", "o/a", "meu" etc. Também adicionei 5 palavras que identifiquei nos textos e que não trazem nenhuma informação valiosa É interessante notar que adicionei "elle/ella" devido à escrita da época dos livros de Machado de Assis. Essas palavras serão removidas no próximo passo.
+
+##### Formato _tidy_
+
+Uma das filosofias adotadas pelos usuários do R é o formato _tidy_ dos dados, no qual cada variável é uma coluna e cada observação é uma linha. Podemos aplicar esse mesmo princípio para dados textuais com o pacote `tidytext`. Escolhi como _token_ palavras porque são a unidade mais interessante para análise nesse contexto.
+
+```{r tidying, message=FALSE, warning=FALSE}
+tidy_machado <- 
+  livros %>% unnest_tokens(word, text) %>% 
+  anti_join(stop_words)
+
+head(tidy_machado)
+```
+
+##### Lemmatização
+
+Esse processo consiste em retirar a flexão do verbo, como por exemplo: caminhando $\rightarrow$ caminhar. Fazer isso permite agregar essas diferentes flexões em uma palavra só. Felizmente, o pacote `udpipe` faz isso com bastante facilidade e rapidez para as obras em questão.
+
+```{r lemma}
+books_udpipe <- udpipe_annotate(udp_model, pull(tidy_machado, word), tokenizer = "vertical") %>% as.data.frame()
+head(books_udpipe)
+```
+
+##### Etapa final da preparação
+
+Aqui, mantive apenas variáveis interessantes e acrescentei o nome dos livros.
+
+```{r data-frame-preparado}
+processed_machado <- 
+  tidy_machado %>% 
+  bind_cols(books_udpipe) %>% 
+  select(gutenberg_id, chapter, word, lemma, upos) %>% 
+  mutate(book = factor(case_when(gutenberg_id == 55682 ~ "Quincas Borba (1891)",
+                                    gutenberg_id == 54829 ~ "Memórias Póstumas de Brás Cubas (1881)",
+                                    gutenberg_id == 55752 ~ "Dom Casmurro (1899)"), 
+                       levels = c("Memórias Póstumas de Brás Cubas (1881)", "Quincas Borba (1891)", "Dom Casmurro (1899)")))
+
+head(processed_machado)
+```
+
+### Visualizando frequências
+
+```{r most-common, message=FALSE}
+processed_machado %>%
+  group_by(book) %>% 
+  count(word, sort = TRUE) %>% 
+  mutate(word = reorder_within(word, n, book)) %>% 
+  top_n(n = 25) %>%
+  ggplot(aes(x = n, y = word, fill = book)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_reordered() +
+  facet_wrap(~book, scales = "free") +
+  scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
+  theme_fivethirtyeight()
+```
+
+A palavra mais frequente de cada livro são os personagens principais. 
+
+- Em Brás Cubas, **Virgilia** é a palavra que aparece mais vezes. Ela é o principal relacionamento de Brás Cubas.
+
+- Em Quincas Borba, **Rubião** é o mais frequente. É interessante notar que essa é a única obra analisada que é escrita em 3ª pessoa. No caso das outras obras, o personagem principal não aparece nas mais frequentes, mas em Quincas Borba sim, pelo tipo de narrador.
+
+- Em Dom Casmurro, **Capitu**, amor de Bentinho, é a palavra mais frequente.
+
+Também notamos que existem palavras muito comuns nas três obras, como **olhos**, **casa** e **tempo**. Isso é bem esperado, dado que as três obras são consideradas pelos pesquisadores uma trilogia, a chamada _trilogia realista_, que explora alguns temas em comum e possuem o mesmo estilo de escrita.
+
+
 ### Análise de sentimento
+
+Será que as obras de Machado de Assis são "felizes"?
+
+Usei o léxico de sentimento **OpLexicon** para obter a polaridade dos sentimentos, sendo -1 negativo, 0 neutro e 1 positivo. A ideia é ver o sentimento predominante de cada capítulo, então somei essas polaridades agrupadas por capítulo e livro.
+
+```{r sentiment}
+sent <- 
+  processed_machado %>% inner_join(oplexicon_v3.0, by = c("word" = "term")) %>% 
+  group_by(book, chapter) %>% 
+  mutate(sentimento = sum(polarity)) %>% 
+  ungroup() %>% 
+  filter(sentimento != 0) %>% 
+  mutate(sentimento_cat = ifelse(sentimento < 0, "Negativo", "Positivo"))
+```
+
+#### Visualizando sentimentos
+
+Podemos visualizar os sentimento predominantes da seguinte forma:
+
+```{r sentiment-viz, message=FALSE}
+  sent %>% 
+  ggplot(aes(x = chapter, y = sentimento, fill = sentimento_cat)) +
+  geom_bar(stat = "identity", position = "identity") +
+  facet_grid(~book, scales = "free") +
+  scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
+  labs(fill = "Polaridade do sentimento") +
+  theme_fivethirtyeight()
+```
+
+- Brás Cubas parece ter a maior concentração de sentimentos **negativos**
+
+- Os capítulos mais **positivos** vem da obra Quincas Borba
+
+Olhando apenas para Dom Casmurro:
+
+```{r sentiment-viz-dc}
+sent_plot_dc <-
+sent %>% 
+  filter(gutenberg_id == 55752) %>% 
+  ggplot(aes(x = chapter, y = sentimento, fill = sentimento_cat)) +
+  geom_bar(stat = "identity", position = "identity") +
+  scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
+  labs(fill = "Polaridade do sentimento") +
+  theme_fivethirtyeight()
+
+sent_plot_dc + 
+  annotate(geom = "curve", x = 78, xend = 84, y = -16, yend = -10, curvature = -0.25) +
+  annotate(geom = "text", x = 78, y = -17, label = "Capítulo 85: O Defunto") +
+  annotate(geom = "curve", x = 101, xend = 108, y = 35, yend = 33, curvature = -0.25) +
+  annotate(geom = "text", x = 130, y = 33, label = "Capítulo 100: Tu serás feliz, Bentinho")
+```
+
+Observamos que os títulos dos capítulos mais positivos e negativos já entregam bem o que é contemplado no texto.
+
+E para concluir, podemos ver os sentimentos acumulados ao longo de cada obra:
+
+```{r sentiment-viz-cumsum}
+  sent %>% 
+  group_by(book, sentimento_cat) %>% 
+  mutate(cumsum = cumsum(sentimento)) %>% 
+  ggplot(aes(x = chapter, y = cumsum, color = sentimento_cat)) +
+  geom_line(size = 1) +
+  facet_grid(~book, scales = "free") +
+  scale_color_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
+  labs(color = "Polaridade do sentimento") +
+  theme_fivethirtyeight()
+```
+
+Quincas Borba é, de longe, o livro mais positivo analisado, seguido de Dom Casmurro. Brás Cubas é o mais negativo, como esperado, já que o personagem narra sua história de uma forma bastante pessimista.
+
+
 ### Preparando... de novo!
+
+Quando queremos aplicar modelos em dados textuais, o formato mais comum é o **document-term matrix** (DTM), no qual uma linha é um documento (no caso, três linhas para três livros), cada coluna é um termo (aqui, são várias palavras) e o valor dentro dessas células é a contagem de vezes que o termo aparece no documento. Vou passar os dados do formato _tidy_ comentado acima para o DTM:
+
+```{r dtm}
+tidy_count <- tidy_machado %>% 
+  group_by(gutenberg_id) %>% 
+  count(word, sort = TRUE) %>% ungroup() %>% rename("document" = "gutenberg_id")
+
+dtm <- tidy_count %>% cast_dtm(term = word, document = document,  value = n)
+```
+
+Agora podemos aplicar modelos de topificação.
+
 ### Tópicos latentes
+
+Vou usar o modelo de alocação latente de Dirichlet (LDA), que permite entender semelhanças entre as observações através de variáveis latentes (que não podemos medir diretamente). Especificamente para textos, entende-se que um tópico é uma mistura de palavras e um documento é uma mistura de tópicos. 
+
+#### Corpus completo
+
+```{r lda-raw}
+fit_lda <- LDA(dtm, k = 3, control = list(seed = 758))
+fit_lda
+```
+
+Apliquei o modelo de LDA com **3 tópicos**, pois estou analisando três livros diferentes e quero agrupá-los em três grupos diferentes. Vamos ver as probabilidades por termo por tópico, ou seja, o "peso" de cada palavra em um tópico. Aqui selecionei as palavras mais relevantes.
+
+```{r lda-raw-beta}
+machado_topics <- tidy(fit_lda, matrix = "beta")
+
+machado_top_terms <- machado_topics %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+machado_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered() +
+  scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
+  theme_fivethirtyeight()
+```
+Claramente os personagens principais dos três livros aparecem com grande peso em cada tópico e existe algumas palavras com pesos bem próximos nos três tópicos. No entanto, algumas palavras que apareceram não contribuem tanto para a caracterização do tópico, então podemos ajustar um modelo que contempla apenas **substantivos**.
+
+#### Apenas substantivos
+
+```{r lda-noun}
+tidy_count_nouns <- 
+  processed_machado %>% 
+  filter(upos == "NOUN" | word == "capitu") %>%
+  group_by(gutenberg_id) %>%
+  count(word, sort = TRUE) %>%
+  ungroup() %>% 
+  rename("document" = "gutenberg_id")
+
+dtm_noun <- tidy_count_nouns %>% cast_dtm(term = word, document = document,  value = n)
+
+fit_lda_noun <- LDA(dtm_noun, k = 3, control = list(seed = 758))
+fit_lda_noun
+```
+
+Os passos são bem parecidos com os realizados anteriormente, apenas filtrando a tag **noun** e incluindo **Capitu** como substantivo, que infelizmente foi tagueado errado como verbo. Vamos olhar novamente para os pesos das palavras para cada tópico:
+
+```{r lda-noun-beta}
+machado_topics_nouns <- tidy(fit_lda_noun, matrix = "beta")
+
+machado_top_nouns <- machado_topics_nouns %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+# more interesting than the raw corpus!
+machado_top_nouns %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered() +
+  scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
+  theme_fivethirtyeight()
+```
+
+Parece um pouco mais interessante do que as palavras do modelo anterior! Aparecem as palavras **seminário** e **padre** no tópico 2, bem importante na história de Dom Casmurro, na qual a mãe de Bentinho deseja esse futuro para o filho. É interessante notar que, dado que as palavras estão separadas individualmente, vemos "dia" e "dias", sendo o primeiro em relação ao tempo e o segundo ao personagem **José Dias**.
+
+Também vemos **Borba** no tópico 1, referente ao Quincas Borba, amigo de infância de Brás Cubas. No tópico 3, surge a palavra **marido**, importante para as relações entre Rubião, Sophia e Cristiano Palha da obra Quincas Borba.
+
+Tendo a ideia de um documento ser uma mistura de tópicos, podemos ver as probabilidades de cada documento ter sido retirado de um determinado tópico.
+
+```{r}
+book_names <- c("55682" = "Quincas Borba (1891)", "54829" = "Memórias Póstumas de Brás Cubas (1881)", "55752" = "Dom Casmurro (1899)")
+
+# gamma probabilities
+tidy(fit_lda_noun, matrix = "gamma") %>%
+  mutate(document = reorder(document, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma)) +
+  geom_boxplot() +
+  facet_wrap(~ document, labeller = labeller(document = book_names)) +
+  scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
+  theme_fivethirtyeight()
+
+```
+
+Nas obras analisadas, cada documento ficou exclusivamente com cada tópico: ou seja, a probabilidade de Brás Cubas ter sido retirado do tópico 1 é praticamente 1 e 0 para os outros dois tópicos. O mesmo se segue para os outros dois textos de Machado de Assis.
+
 ## Conclusão
+
+Dessa análise, podemos pensar em trabalhos futuros bem interessantes, como:
+
+- Será que os mesmos tópicos da trilogia realista de Machado aparecem em suas outras obras?
+
+- Como o ano ou o gênero da obra influenciam no texto do autor?
+
+- O quão similar a outros escritores contemporâneos é a sua escrita? 
+
+- Qual a influência do estilo de Machado de Assis em outros autores?
+
+Essas perguntas podem ser exploradas com técnicas mais sofisticadas de análise de texto e trazer uma perspectiva quantitativa da literatura brasileira.
+
 ## Referências
 
 - Text mining with R: https://www.tidytextmining.com/index.html

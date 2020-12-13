@@ -1839,7 +1839,7 @@ head(livros_machado, n = 10)</code></pre>
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 <p>Logo de início, conseguimos identificar que os caracteres especiais não foram lidos corretamente e que o formato do texto não parece adequado para análise. Além disso, é legal ter em mente que as primeiras linhas são o header do texto, ou seja, informações sobre o autor, publicação e editora, que não vão agregar na análise. Voltarei nisso mais adiante.</p>
-<p>Também fiz o download do modelo de tags de POS (<em>part of speech</em>), que usei para o processo de lemmatização e obtenção das tags de <em>adjetivo</em>, <em>substantivo</em> etc.</p>
+<p>Também fiz o download do modelo de tags de POS (<em>part of speech</em>) do UDpipe, que usei para o processo de lemmatização dos tokens e obtenção das tags de <em>adjetivo</em>, <em>substantivo</em> etc.</p>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
 <!-- rnb-source-begin eyJkYXRhIjoiYGBgclxudWRwX21vZGVsIDwtIHVkcGlwZV9kb3dubG9hZF9tb2RlbChsYW5ndWFnZSA9IFwicG9ydHVndWVzZVwiKVxudWRwX21vZGVsIDwtIHVkcGlwZV9sb2FkX21vZGVsKHVkcF9tb2RlbClcbmBgYCJ9 -->
@@ -1851,6 +1851,138 @@ udp_model &lt;- udpipe_load_model(udp_model)</code></pre>
 </div>
 <div id="preparando" class="section level3">
 <h3>Preparando</h3>
+<div id="identificando-capítulos-e-caracteres-especiais" class="section level4">
+<h4>Identificando capítulos e caracteres especiais</h4>
+<p>A primeira coisa que fiz foi identificar os capítulos de cada livro. Dividi em duas partes.</p>
+<p>Para <strong>Quincas Borba</strong> e <strong>Memórias Póstumas de Brás Cubas</strong>, todos os capítulos começam com “CAPITULO”, ou seja, bem fácil de identificar! Só precisei trocar “primeiro” por “I” para seguir no padrão de números romanos. Os capítulos foram identificados por uma <em>expressão regular</em> que identifica “CAPITULO” seguido de números romanos, conforme a estrutura do texto. Se eu identificasse apenas números romanos em qualquer posição da string, algumas frases do texto seriam excluídas, pois o autor comenta alguns capítulos durante o texto.</p>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGl2cm9zX2NhcCA8LSBcbiAgbGl2cm9zX21hY2hhZG8gJT4lIFxuICBncm91cF9ieShndXRlbmJlcmdfaWQpICU+JSBcbiAgbXV0YXRlKHRleHQgPSByZXBsYWNlKHRleHQsIHRleHQgPT0gXCJDQVBJVFVMTyBQUklNRUlST1wiLCBcIkNBUElUVUxPIElcIikpICU+JSBcbiAgZmlsdGVyKGd1dGVuYmVyZ19pZCAhPSA1NTc1MikgJT4lIFxuICBtdXRhdGUoY2hhcHRlciA9IGN1bXN1bShzdHJfZGV0ZWN0KHRleHQsIHJlZ2V4KFwiQ0FQSVRVTE8gW01EQ0xYVklcXFxcLl0rJFwiLCBcbiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBpZ25vcmVfY2FzZSA9IFRSVUUpKSkpICU+JSB1bmdyb3VwKClcbmBgYCJ9 -->
+<pre class="r"><code>livros_cap &lt;- 
+  livros_machado %&gt;% 
+  group_by(gutenberg_id) %&gt;% 
+  mutate(text = replace(text, text == &quot;CAPITULO PRIMEIRO&quot;, &quot;CAPITULO I&quot;)) %&gt;% 
+  filter(gutenberg_id != 55752) %&gt;% 
+  mutate(chapter = cumsum(str_detect(text, regex(&quot;CAPITULO [MDCLXVI\\.]+$&quot;, 
+                                                 ignore_case = TRUE)))) %&gt;% ungroup()</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+<p>E como fica <strong>Dom Casmurro</strong>?</p>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGl2cm9zIDwtIGxpdnJvc19tYWNoYWRvICU+JSBcbiAgZmlsdGVyKGd1dGVuYmVyZ19pZCA9PSA1NTc1MikgJT4lIFxuICBtdXRhdGUoY2hhcHRlciA9IGN1bXN1bShzdHJfZGV0ZWN0KHRleHQsIHJlZ2V4KFwiXltNRENMWFZJXFxcXC5dKyRcIiwgXG4gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWdub3JlX2Nhc2UgPSBUUlVFKSkpKSAlPiUgcmJpbmQobGl2cm9zX2NhcCkgJT4lIFxuICBtdXRhdGUodGV4dCA9IG1hcCh0ZXh0LCBmdW5jdGlvbih4KSBpY29udih4LCBmcm9tID0gXCJJU08tODg1OS0xXCIsIHRvID0gXCJVVEYtOFwiKSkpICU+JSBcbiAgbXV0YXRlKHRleHQgPSBzdHJpbmdpOjpzdHJpX3RyYW5zX2dlbmVyYWwodGV4dCwgXCJMYXRpbi1BU0NJSVwiKSkgJT4lIFxuICBtdXRhdGUodGV4dCA9IGdzdWIoXCJbXi0wLTlBLVphLXogXVwiLFwiXCIsdGV4dCkpICU+JSBcbiAgbXV0YXRlKHRleHQgPSBzdHJfc3F1aXNoKHRleHQpKVxuYGBgIn0= -->
+<pre class="r"><code>livros &lt;- livros_machado %&gt;% 
+  filter(gutenberg_id == 55752) %&gt;% 
+  mutate(chapter = cumsum(str_detect(text, regex(&quot;^[MDCLXVI\\.]+$&quot;, 
+                                                 ignore_case = TRUE)))) %&gt;% rbind(livros_cap) %&gt;% 
+  mutate(text = map(text, function(x) iconv(x, from = &quot;ISO-8859-1&quot;, to = &quot;UTF-8&quot;))) %&gt;% 
+  mutate(text = stringi::stri_trans_general(text, &quot;Latin-ASCII&quot;)) %&gt;% 
+  mutate(text = gsub(&quot;[^-0-9A-Za-z ]&quot;,&quot;&quot;,text)) %&gt;% 
+  mutate(text = str_squish(text))</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+<p>Identifiquei os capítulos de Dom Casmurro separadamente porque eles não têm “CAPITULO” na frente, apenas os números romanos no <strong>início</strong> da string.</p>
+<p>Além disso, no código acima eu também removi caracteres especiais como acentos e cedilha, além de retirar espaços em branco extras.</p>
+</div>
+<div id="removendo-header-e-footer-dos-livros" class="section level4">
+<h4>Removendo header e footer dos livros</h4>
+<p>Os livros do Projeto Gutenberg têm um <em>header</em>, que contêm o nome do autor/editora/ano, e o <em>footer</em>, que em geral contempla o índice do livro. Esse formato pode mudar de acordo com cada livro, mas aqui todas as obras têm essas informações e elas não são úteis para a análise. Removi da seguinte forma:</p>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGl2cm9zIDwtIGFzLmRhdGEudGFibGUobGl2cm9zKSAlPiUgZmlsdGVyKGNoYXB0ZXIgIT0gMClcbmxpdnJvcyA8LSBsaXZyb3NbLCByZW1vdmUgOj0gLkkgJWluJSB3aGljaCh0ZXh0ID09IFwiRklNXCIpOi5OLCBieSA9IGd1dGVuYmVyZ19pZF1cbmxpdnJvcyA8LSBsaXZyb3NbcmVtb3ZlID09IEZBTFNFXVxubGl2cm9zIDwtIGxpdnJvc1stKDE2NzAzOjE2ODc2KV0gJT4lIHNlbGVjdCgtcmVtb3ZlKVxuYGBgIn0= -->
+<pre class="r"><code>livros &lt;- as.data.table(livros) %&gt;% filter(chapter != 0)
+livros &lt;- livros[, remove := .I %in% which(text == &quot;FIM&quot;):.N, by = gutenberg_id]
+livros &lt;- livros[remove == FALSE]
+livros &lt;- livros[-(16703:16876)] %&gt;% select(-remove)</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+<p>Com os capítulos identificados anteriormente, já deu para identificar que os capítulos <strong>0</strong> contemplavam o cabeçalho dos livros. Pensando no rodapé, todos os textos terminam com “FIM” então as linhas abaixo dessa string poderiam ser removidas. Deu certo para duas obras, mas uma delas tive que remover pelos números das linhas.</p>
+</div>
+<div id="identificando-stopwords" class="section level4">
+<h4>Identificando stopwords</h4>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuc3RvcF93b3JkcyA8LSBzdG9wd29yZHM6OnN0b3B3b3JkcyhsYW5ndWFnZSA9IFwicHRcIikgJT4lIGFzLmRhdGEuZnJhbWUoKVxuY29sbmFtZXMoc3RvcF93b3JkcykgPC0gXCJ3b3JkXCJcbnN0b3Bfd29yZHMgPC0gXG4gIHN0b3Bfd29yZHMgJT4lIG11dGF0ZSh3b3JkID0gc3RyaW5naTo6c3RyaV90cmFuc19nZW5lcmFsKHdvcmQsIFwiTGF0aW4tQVNDSUlcIikpICU+JVxuICBhZGRfcm93KHdvcmQgPSBjKFwiZWxsZVwiLCBcImVsbGFcIiwgXCJ0YW9cIiwgXCJjYXBpdHVsb1wiLCBcImRcIikpXG5gYGAifQ== -->
+<pre class="r"><code>stop_words &lt;- stopwords::stopwords(language = &quot;pt&quot;) %&gt;% as.data.frame()
+colnames(stop_words) &lt;- &quot;word&quot;
+stop_words &lt;- 
+  stop_words %&gt;% mutate(word = stringi::stri_trans_general(word, &quot;Latin-ASCII&quot;)) %&gt;%
+  add_row(word = c(&quot;elle&quot;, &quot;ella&quot;, &quot;tao&quot;, &quot;capitulo&quot;, &quot;d&quot;))</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+<p>As <em>stopwords</em> são outros elementos que não contribuem para a análise: são palavras como “de”, “o/a”, “meu” etc. Também adicionei 5 palavras que identifiquei nos textos e que não trazem nenhuma informação interessante. É interessante notar que adicionei “elle/ella” devido à escrita da época dos livros de Machado de Assis. Essas palavras serão removidas no próximo passo.</p>
+<div id="formato-tidy" class="section level5">
+<h5>Formato <em>tidy</em></h5>
+<p>Uma das filosofias adotadas pelos usuários do R é o formato <em>tidy</em> dos dados, no qual cada variável é uma coluna e cada observação é uma linha. Podemos aplicar esse mesmo princípio para dados textuais com o pacote <code>tidytext</code>. Escolhi como <em>token</em> palavras porque são a unidade mais interessante para análise nesse contexto.</p>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxudGlkeV9tYWNoYWRvIDwtIFxuICBsaXZyb3MgJT4lIHVubmVzdF90b2tlbnMod29yZCwgdGV4dCkgJT4lIFxuICBhbnRpX2pvaW4oc3RvcF93b3JkcylcblxuaGVhZCh0aWR5X21hY2hhZG8pXG5gYGAifQ== -->
+<pre class="r"><code>tidy_machado &lt;- 
+  livros %&gt;% unnest_tokens(word, text) %&gt;% 
+  anti_join(stop_words)
+
+head(tidy_machado)</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+</div>
+<div id="lemmatização" class="section level5">
+<h5>Lemmatização</h5>
+<p>Esse processo consiste em retirar a flexão do verbo, como por exemplo: caminhando <span class="math inline">\(\rightarrow\)</span> caminhar. Fazer isso permite agregar essas diferentes flexões em uma palavra só, que agrega mais para essa análise. Felizmente, o pacote <code>udpipe</code> faz isso com bastante facilidade e rapidez para as obras em questão.</p>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuYm9va3NfdWRwaXBlIDwtIHVkcGlwZV9hbm5vdGF0ZSh1ZHBfbW9kZWwsIHB1bGwodGlkeV9tYWNoYWRvLCB3b3JkKSwgdG9rZW5pemVyID0gXCJ2ZXJ0aWNhbFwiKSAlPiUgYXMuZGF0YS5mcmFtZSgpXG5oZWFkKGJvb2tzX3VkcGlwZSlcbmBgYCJ9 -->
+<pre class="r"><code>books_udpipe &lt;- udpipe_annotate(udp_model, pull(tidy_machado, word), tokenizer = &quot;vertical&quot;) %&gt;% as.data.frame()
+head(books_udpipe)</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+</div>
+<div id="etapa-final-da-preparação" class="section level5">
+<h5>Etapa final da preparação</h5>
+<p>Aqui, mantive apenas variáveis interessantes e acrescentei o nome dos livros.</p>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxucHJvY2Vzc2VkX21hY2hhZG8gPC0gXG4gIHRpZHlfbWFjaGFkbyAlPiUgXG4gIGJpbmRfY29scyhib29rc191ZHBpcGUpICU+JSBcbiAgc2VsZWN0KGd1dGVuYmVyZ19pZCwgY2hhcHRlciwgd29yZCwgbGVtbWEsIHVwb3MpICU+JSBcbiAgbXV0YXRlKGJvb2sgPSBmYWN0b3IoY2FzZV93aGVuKGd1dGVuYmVyZ19pZCA9PSA1NTY4MiB+IFwiUXVpbmNhcyBCb3JiYSAoMTg5MSlcIixcbiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGd1dGVuYmVyZ19pZCA9PSA1NDgyOSB+IFwiTWVtw7NyaWFzIFDDs3N0dW1hcyBkZSBCcsOhcyBDdWJhcyAoMTg4MSlcIixcbiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGd1dGVuYmVyZ19pZCA9PSA1NTc1MiB+IFwiRG9tIENhc211cnJvICgxODk5KVwiKSwgXG4gICAgICAgICAgICAgICAgICAgICAgIGxldmVscyA9IGMoXCJNZW3Ds3JpYXMgUMOzc3R1bWFzIGRlIEJyw6FzIEN1YmFzICgxODgxKVwiLCBcIlF1aW5jYXMgQm9yYmEgKDE4OTEpXCIsIFwiRG9tIENhc211cnJvICgxODk5KVwiKSkpXG5cbmhlYWQocHJvY2Vzc2VkX21hY2hhZG8pXG5gYGAifQ== -->
+<pre class="r"><code>processed_machado &lt;- 
+  tidy_machado %&gt;% 
+  bind_cols(books_udpipe) %&gt;% 
+  select(gutenberg_id, chapter, word, lemma, upos) %&gt;% 
+  mutate(book = factor(case_when(gutenberg_id == 55682 ~ &quot;Quincas Borba (1891)&quot;,
+                                    gutenberg_id == 54829 ~ &quot;Memórias Póstumas de Brás Cubas (1881)&quot;,
+                                    gutenberg_id == 55752 ~ &quot;Dom Casmurro (1899)&quot;), 
+                       levels = c(&quot;Memórias Póstumas de Brás Cubas (1881)&quot;, &quot;Quincas Borba (1891)&quot;, &quot;Dom Casmurro (1899)&quot;)))
+
+head(processed_machado)</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+</div>
+</div>
+</div>
+<div id="visualizando-frequências" class="section level3">
+<h3>Visualizando frequências</h3>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxucHJvY2Vzc2VkX21hY2hhZG8gJT4lXG4gIGdyb3VwX2J5KGJvb2spICU+JSBcbiAgY291bnQod29yZCwgc29ydCA9IFRSVUUpICU+JSBcbiAgbXV0YXRlKHdvcmQgPSByZW9yZGVyX3dpdGhpbih3b3JkLCBuLCBib29rKSkgJT4lIFxuICB0b3BfbihuID0gMjUpICU+JVxuICBnZ3Bsb3QoYWVzKHggPSBuLCB5ID0gd29yZCwgZmlsbCA9IGJvb2spKSArXG4gIGdlb21fY29sKHNob3cubGVnZW5kID0gRkFMU0UpICtcbiAgc2NhbGVfeV9yZW9yZGVyZWQoKSArXG4gIGZhY2V0X3dyYXAofmJvb2ssIHNjYWxlcyA9IFwiZnJlZVwiKSArXG4gIHNjYWxlX2ZpbGxfdmlyaWRpc19kKG9wdGlvbiA9IFwiY2l2aWRpc1wiLCBiZWdpbiA9IDAuMzQsIGVuZCA9IDAuOTQpICtcbiAgdGhlbWVfZml2ZXRoaXJ0eWVpZ2h0KClcbmBgYCJ9 -->
+<pre class="r"><code>processed_machado %&gt;%
+  group_by(book) %&gt;% 
+  count(word, sort = TRUE) %&gt;% 
+  mutate(word = reorder_within(word, n, book)) %&gt;% 
+  top_n(n = 25) %&gt;%
+  ggplot(aes(x = n, y = word, fill = book)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_reordered() +
+  facet_wrap(~book, scales = &quot;free&quot;) +
+  scale_fill_viridis_d(option = &quot;cividis&quot;, begin = 0.34, end = 0.94) +
+  theme_fivethirtyeight()</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
 </div>
 <div id="análise-de-sentimento" class="section level3">
 <h3>Análise de sentimento</h3>
@@ -1877,7 +2009,7 @@ udp_model &lt;- udpipe_load_model(udp_model)</code></pre>
 <!-- rnb-text-end -->
 </div>
 
-<div id="rmd-source-code">LS0tCnRpdGxlOiAnQW7DoWxpc2UgdGV4dHVhbDogTWFjaGFkbyBkZSBBc3NpcycKYXV0aG9yOiAiTWFyaWFuYSBkZSBDYXN0cm8gUGFzcXVhbGluaSIKZGF0ZTogIjEzLzEyLzIwMjAiCm91dHB1dDoKICBodG1sX25vdGVib29rCi0tLQoKYGBge3Igc2V0dXAsIGluY2x1ZGU9RkFMU0V9CmtuaXRyOjpvcHRzX2NodW5rJHNldChlY2hvID0gVFJVRSkKYGBgCgojIyBNb3RpdmHDp8OjbwojIyMgVmVyc8OjbyBkbyBSIGUgcGFjb3RlczoKCmBgYHtyIHBhY2thZ2VzLCBtZXNzYWdlPUZBTFNFLCB3YXJuaW5nPUZBTFNFfQpSLnZlcnNpb24uc3RyaW5nCgpsaWJyYXJ5KHRpZHl2ZXJzZSkKbGlicmFyeShkYXRhLnRhYmxlKQpsaWJyYXJ5KHRpZHl0ZXh0KQpsaWJyYXJ5KGxleGljb25QVCkKbGlicmFyeShndXRlbmJlcmdyKQpsaWJyYXJ5KHVkcGlwZSkKbGlicmFyeShnZ3RoZW1lcykKbGlicmFyeSh2aXJpZGlzKQpsaWJyYXJ5KHRvcGljbW9kZWxzKQpgYGAKIyMgQW7DoWxpc2UKIyMjIE9idGVuZG8gb3MgZGFkb3MKCkFvIGludsOpcyBkZSBsZXIgYXJxdWl2b3MgZGUgdGV4dG8gcGFyYSBvYnRlciBvcyBsaXZyb3MsIGFwcm92ZWl0ZWkgbyBwYWNvdGUgZG8gUiBgZ3V0ZW5iZXJncmAgcXVlIHBlcm1pdGUgZmF6ZXIgbyBkb3dubG9hZCBkZSBvYnJhcyBkaXNwb25pYmlsaXphZGFzIHBlbG8gW1Byb2pldG8gR3V0ZW5iZXJnXShodHRwczovL3d3dy5ndXRlbmJlcmcub3JnLykuIMOJIHBvc3PDrXZlbCBvYnRlciBtYWlzIGRlIHVtIGxpdnJvIGNvbSBhcGVuYXMgdW1hIGNoYW1hZGEgZGEgZnVuw6fDo28sIGEgcGFydGlyIGRvIGlkZW50aWZpY2Fkb3IgZGEgb2JyYTogYDU1NjgyYCByZWZlcmUtc2UgYW8gbGl2cm8gKipRdWluY2FzIEJvcmJhICgxODkxKSoqLCBgNTQ4MjlgIGFvICoqTWVtw7NyaWFzIFDDs3N0dW1hcyBkZSBCcsOhcyBDdWJhcyAoMTg4MSkqKiwgYDU1NzUyYCDDqSBhIG9icmEgKipEb20gQ2FzbXVycm8gKDE4OTkpKiouCmBgYHtyIGdldHRpbmctYm9va3MsIG1lc3NhZ2U9RkFMU0UsIHdhcm5pbmc9RkFMU0V9CmxpdnJvc19tYWNoYWRvIDwtIGd1dGVuYmVyZ19kb3dubG9hZChjKDU1NzUyLCA1NTY4MiwgNTQ4MjkpKQpoZWFkKGxpdnJvc19tYWNoYWRvLCBuID0gMTApCmBgYAoKTG9nbyBkZSBpbsOtY2lvLCBjb25zZWd1aW1vcyBpZGVudGlmaWNhciBxdWUgb3MgY2FyYWN0ZXJlcyBlc3BlY2lhaXMgbsOjbyBmb3JhbSBsaWRvcyBjb3JyZXRhbWVudGUgZSBxdWUgbyBmb3JtYXRvIGRvIHRleHRvIG7Do28gcGFyZWNlIGFkZXF1YWRvIHBhcmEgYW7DoWxpc2UuIEFsw6ltIGRpc3NvLCDDqSBsZWdhbCB0ZXIgZW0gbWVudGUgcXVlIGFzIHByaW1laXJhcyBsaW5oYXMgc8OjbyBvIGhlYWRlciBkbyB0ZXh0bywgb3Ugc2VqYSwgaW5mb3JtYcOnw7VlcyBzb2JyZSBvIGF1dG9yLCBwdWJsaWNhw6fDo28gZSBlZGl0b3JhLCBxdWUgbsOjbyB2w6NvIGFncmVnYXIgbmEgYW7DoWxpc2UuIFZvbHRhcmVpIG5pc3NvIG1haXMgYWRpYW50ZS4KClRhbWLDqW0gZml6IG8gZG93bmxvYWQgZG8gbW9kZWxvIGRlIHRhZ3MgZGUgUE9TIChfcGFydCBvZiBzcGVlY2hfKSwgcXVlIHVzZWkgcGFyYSBvIHByb2Nlc3NvIGRlIGxlbW1hdGl6YcOnw6NvIGUgb2J0ZW7Dp8OjbyBkYXMgdGFncyBkZSBfYWRqZXRpdm9fLCBfc3Vic3RhbnRpdm9fIGV0Yy4KCmBgYHtyIHVkcC1tb2RlbH0KdWRwX21vZGVsIDwtIHVkcGlwZV9kb3dubG9hZF9tb2RlbChsYW5ndWFnZSA9ICJwb3J0dWd1ZXNlIikKdWRwX21vZGVsIDwtIHVkcGlwZV9sb2FkX21vZGVsKHVkcF9tb2RlbCkKYGBgCgoKIyMjIFByZXBhcmFuZG8KIyMjIEFuw6FsaXNlIGRlIHNlbnRpbWVudG8KIyMjIFByZXBhcmFuZG8uLi4gZGUgbm92byEKIyMjIFTDs3BpY29zIGxhdGVudGVzCiMjIENvbmNsdXPDo28KIyMgUmVmZXLDqm5jaWFzCgotIFRleHQgbWluaW5nIHdpdGggUjogaHR0cHM6Ly93d3cudGlkeXRleHRtaW5pbmcuY29tL2luZGV4Lmh0bWwKCi0gQW4gaW50cm9kdWN0aW9uIHRvIFRleHQgcHJvY2Vzc2luZyBhbmQgQW5hbHlzaXMgd2l0aCBSOiBodHRwczovL20tY2xhcmsuZ2l0aHViLmlvL3RleHQtYW5hbHlzaXMtd2l0aC1SL2ludHJvLmh0bWwKCi0gVURQaXBlIE5hdHVyYWwgTGFuZ3VhZ2UgUHJvY2Vzc2luZyAtIFRvcGljIE1vZGVsbGluZyBVc2UgQ2FzZXM6IGh0dHBzOi8vY3Jhbi5yLXByb2plY3Qub3JnL3dlYi9wYWNrYWdlcy91ZHBpcGUvdmlnbmV0dGVzL3VkcGlwZS11c2VjYXNlLXRvcGljbW9kZWxsaW5nLmh0bWwKCi0gZ3V0ZW5iZXJncjogU2VhcmNoIGFuZCBkb3dubG9hZCBwdWJsaWMgZG9tYWluIHRleHRzIGZyb20gUHJvamVjdCBHdXRlbmJlcmc6IGh0dHBzOi8vY3Jhbi5yLXByb2plY3Qub3JnL3dlYi9wYWNrYWdlcy9ndXRlbmJlcmdyL3ZpZ25ldHRlcy9pbnRyby5odG1sCgotIEludHJvZHXDp8OjbyBhIE5MVEsgY29tIERvbSBDYXNtdXJybzogaHR0cHM6Ly9tZWRpdW0uY29tL3R1cmluZy10YWxrcy91bWEtYW4lQzMlQTFsaXNlLWRlLWRvbS1jYXNtdXJyby1jb20tbmx0ay0zNDNkNzJkZDQ3YTc=</div>
+<div id="rmd-source-code">LS0tCnRpdGxlOiAnQW7DoWxpc2UgdGV4dHVhbDogTWFjaGFkbyBkZSBBc3NpcycKYXV0aG9yOiAiTWFyaWFuYSBkZSBDYXN0cm8gUGFzcXVhbGluaSIKZGF0ZTogIjEzLzEyLzIwMjAiCm91dHB1dDoKICBodG1sX25vdGVib29rCi0tLQoKYGBge3Igc2V0dXAsIGluY2x1ZGU9RkFMU0V9CmtuaXRyOjpvcHRzX2NodW5rJHNldChlY2hvID0gVFJVRSkKYGBgCgojIyBNb3RpdmHDp8OjbwojIyMgVmVyc8OjbyBkbyBSIGUgcGFjb3RlczoKCmBgYHtyIHBhY2thZ2VzLCBtZXNzYWdlPUZBTFNFLCB3YXJuaW5nPUZBTFNFfQpSLnZlcnNpb24uc3RyaW5nCgpsaWJyYXJ5KHRpZHl2ZXJzZSkKbGlicmFyeShkYXRhLnRhYmxlKQpsaWJyYXJ5KHRpZHl0ZXh0KQpsaWJyYXJ5KGxleGljb25QVCkKbGlicmFyeShndXRlbmJlcmdyKQpsaWJyYXJ5KHVkcGlwZSkKbGlicmFyeShnZ3RoZW1lcykKbGlicmFyeSh2aXJpZGlzKQpsaWJyYXJ5KHRvcGljbW9kZWxzKQpgYGAKIyMgQW7DoWxpc2UKIyMjIE9idGVuZG8gb3MgZGFkb3MKCkFvIGludsOpcyBkZSBsZXIgYXJxdWl2b3MgZGUgdGV4dG8gcGFyYSBvYnRlciBvcyBsaXZyb3MsIGFwcm92ZWl0ZWkgbyBwYWNvdGUgZG8gUiBgZ3V0ZW5iZXJncmAgcXVlIHBlcm1pdGUgZmF6ZXIgbyBkb3dubG9hZCBkZSBvYnJhcyBkaXNwb25pYmlsaXphZGFzIHBlbG8gW1Byb2pldG8gR3V0ZW5iZXJnXShodHRwczovL3d3dy5ndXRlbmJlcmcub3JnLykuIMOJIHBvc3PDrXZlbCBvYnRlciBtYWlzIGRlIHVtIGxpdnJvIGNvbSBhcGVuYXMgdW1hIGNoYW1hZGEgZGEgZnVuw6fDo28sIGEgcGFydGlyIGRvIGlkZW50aWZpY2Fkb3IgZGEgb2JyYTogYDU1NjgyYCByZWZlcmUtc2UgYW8gbGl2cm8gKipRdWluY2FzIEJvcmJhICgxODkxKSoqLCBgNTQ4MjlgIGFvICoqTWVtw7NyaWFzIFDDs3N0dW1hcyBkZSBCcsOhcyBDdWJhcyAoMTg4MSkqKiwgYDU1NzUyYCDDqSBhIG9icmEgKipEb20gQ2FzbXVycm8gKDE4OTkpKiouCmBgYHtyIGdldHRpbmctYm9va3MsIG1lc3NhZ2U9RkFMU0UsIHdhcm5pbmc9RkFMU0V9CmxpdnJvc19tYWNoYWRvIDwtIGd1dGVuYmVyZ19kb3dubG9hZChjKDU1NzUyLCA1NTY4MiwgNTQ4MjkpKQpoZWFkKGxpdnJvc19tYWNoYWRvLCBuID0gMTApCmBgYAoKTG9nbyBkZSBpbsOtY2lvLCBjb25zZWd1aW1vcyBpZGVudGlmaWNhciBxdWUgb3MgY2FyYWN0ZXJlcyBlc3BlY2lhaXMgbsOjbyBmb3JhbSBsaWRvcyBjb3JyZXRhbWVudGUgZSBxdWUgbyBmb3JtYXRvIGRvIHRleHRvIG7Do28gcGFyZWNlIGFkZXF1YWRvIHBhcmEgYW7DoWxpc2UuIEFsw6ltIGRpc3NvLCDDqSBsZWdhbCB0ZXIgZW0gbWVudGUgcXVlIGFzIHByaW1laXJhcyBsaW5oYXMgc8OjbyBvIGhlYWRlciBkbyB0ZXh0bywgb3Ugc2VqYSwgaW5mb3JtYcOnw7VlcyBzb2JyZSBvIGF1dG9yLCBwdWJsaWNhw6fDo28gZSBlZGl0b3JhLCBxdWUgbsOjbyB2w6NvIGFncmVnYXIgbmEgYW7DoWxpc2UuIFZvbHRhcmVpIG5pc3NvIG1haXMgYWRpYW50ZS4KClRhbWLDqW0gZml6IG8gZG93bmxvYWQgZG8gbW9kZWxvIGRlIHRhZ3MgZGUgUE9TIChfcGFydCBvZiBzcGVlY2hfKSBkbyBVRHBpcGUsIHF1ZSB1c2VpIHBhcmEgbyBwcm9jZXNzbyBkZSBsZW1tYXRpemHDp8OjbyBkb3MgdG9rZW5zIGUgb2J0ZW7Dp8OjbyBkYXMgdGFncyBkZSBfYWRqZXRpdm9fLCBfc3Vic3RhbnRpdm9fIGV0Yy4KCmBgYHtyIHVkcC1tb2RlbH0KdWRwX21vZGVsIDwtIHVkcGlwZV9kb3dubG9hZF9tb2RlbChsYW5ndWFnZSA9ICJwb3J0dWd1ZXNlIikKdWRwX21vZGVsIDwtIHVkcGlwZV9sb2FkX21vZGVsKHVkcF9tb2RlbCkKYGBgCgojIyMgUHJlcGFyYW5kbwoKIyMjIyBJZGVudGlmaWNhbmRvIGNhcMOtdHVsb3MgZSBjYXJhY3RlcmVzIGVzcGVjaWFpcwoKQSBwcmltZWlyYSBjb2lzYSBxdWUgZml6IGZvaSBpZGVudGlmaWNhciBvcyBjYXDDrXR1bG9zIGRlIGNhZGEgbGl2cm8uIERpdmlkaSBlbSBkdWFzIHBhcnRlcy4KClBhcmEgKipRdWluY2FzIEJvcmJhKiogZSAqKk1lbcOzcmlhcyBQw7NzdHVtYXMgZGUgQnLDoXMgQ3ViYXMqKiwgdG9kb3Mgb3MgY2Fww610dWxvcyBjb21lw6dhbSBjb20gIkNBUElUVUxPIiwgb3Ugc2VqYSwgYmVtIGbDoWNpbCBkZSBpZGVudGlmaWNhciEgU8OzIHByZWNpc2VpIHRyb2NhciAicHJpbWVpcm8iIHBvciAiSSIgcGFyYSBzZWd1aXIgbm8gcGFkcsOjbyBkZSBuw7ptZXJvcyByb21hbm9zLiBPcyBjYXDDrXR1bG9zIGZvcmFtIGlkZW50aWZpY2Fkb3MgcG9yIHVtYSBfZXhwcmVzc8OjbyByZWd1bGFyXyBxdWUgaWRlbnRpZmljYSAiQ0FQSVRVTE8iIHNlZ3VpZG8gZGUgbsO6bWVyb3Mgcm9tYW5vcywgY29uZm9ybWUgYSBlc3RydXR1cmEgZG8gdGV4dG8uICBTZSBldSBpZGVudGlmaWNhc3NlIGFwZW5hcyBuw7ptZXJvcyByb21hbm9zIGVtIHF1YWxxdWVyIHBvc2nDp8OjbyBkYSBzdHJpbmcsIGFsZ3VtYXMgZnJhc2VzIGRvIHRleHRvIHNlcmlhbSBleGNsdcOtZGFzLCBwb2lzIG8gYXV0b3IgY29tZW50YSBhbGd1bnMgY2Fww610dWxvcyBkdXJhbnRlIG8gdGV4dG8uCgpgYGB7ciBjaGFwdGVycy0xfQpsaXZyb3NfY2FwIDwtIAogIGxpdnJvc19tYWNoYWRvICU+JSAKICBncm91cF9ieShndXRlbmJlcmdfaWQpICU+JSAKICBtdXRhdGUodGV4dCA9IHJlcGxhY2UodGV4dCwgdGV4dCA9PSAiQ0FQSVRVTE8gUFJJTUVJUk8iLCAiQ0FQSVRVTE8gSSIpKSAlPiUgCiAgZmlsdGVyKGd1dGVuYmVyZ19pZCAhPSA1NTc1MikgJT4lIAogIG11dGF0ZShjaGFwdGVyID0gY3Vtc3VtKHN0cl9kZXRlY3QodGV4dCwgcmVnZXgoIkNBUElUVUxPIFtNRENMWFZJXFwuXSskIiwgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBpZ25vcmVfY2FzZSA9IFRSVUUpKSkpICU+JSB1bmdyb3VwKCkKYGBgCgpFIGNvbW8gZmljYSAqKkRvbSBDYXNtdXJybyoqPyAKCmBgYHtyIGNoYXB0ZXJzLTJ9CmxpdnJvcyA8LSBsaXZyb3NfbWFjaGFkbyAlPiUgCiAgZmlsdGVyKGd1dGVuYmVyZ19pZCA9PSA1NTc1MikgJT4lIAogIG11dGF0ZShjaGFwdGVyID0gY3Vtc3VtKHN0cl9kZXRlY3QodGV4dCwgcmVnZXgoIl5bTURDTFhWSVxcLl0rJCIsIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWdub3JlX2Nhc2UgPSBUUlVFKSkpKSAlPiUgcmJpbmQobGl2cm9zX2NhcCkgJT4lIAogIG11dGF0ZSh0ZXh0ID0gbWFwKHRleHQsIGZ1bmN0aW9uKHgpIGljb252KHgsIGZyb20gPSAiSVNPLTg4NTktMSIsIHRvID0gIlVURi04IikpKSAlPiUgCiAgbXV0YXRlKHRleHQgPSBzdHJpbmdpOjpzdHJpX3RyYW5zX2dlbmVyYWwodGV4dCwgIkxhdGluLUFTQ0lJIikpICU+JSAKICBtdXRhdGUodGV4dCA9IGdzdWIoIlteLTAtOUEtWmEteiBdIiwiIix0ZXh0KSkgJT4lIAogIG11dGF0ZSh0ZXh0ID0gc3RyX3NxdWlzaCh0ZXh0KSkKYGBgCgpJZGVudGlmaXF1ZWkgb3MgY2Fww610dWxvcyBkZSBEb20gQ2FzbXVycm8gc2VwYXJhZGFtZW50ZSBwb3JxdWUgZWxlcyBuw6NvIHTDqm0gIkNBUElUVUxPIiBuYSBmcmVudGUsIGFwZW5hcyBvcyBuw7ptZXJvcyByb21hbm9zIG5vICoqaW7DrWNpbyoqIGRhIHN0cmluZy4KCkFsw6ltIGRpc3NvLCBubyBjw7NkaWdvIGFjaW1hIGV1IHRhbWLDqW0gcmVtb3ZpIGNhcmFjdGVyZXMgZXNwZWNpYWlzIGNvbW8gYWNlbnRvcyBlIGNlZGlsaGEsIGFsw6ltIGRlIHJldGlyYXIgZXNwYcOnb3MgZW0gYnJhbmNvIGV4dHJhcy4KCiMjIyMgUmVtb3ZlbmRvIGhlYWRlciBlIGZvb3RlciBkb3MgbGl2cm9zCgpPcyBsaXZyb3MgZG8gUHJvamV0byBHdXRlbmJlcmcgdMOqbSB1bSBfaGVhZGVyXywgcXVlIGNvbnTDqm0gbyBub21lIGRvIGF1dG9yL2VkaXRvcmEvYW5vLCBlIG8gX2Zvb3Rlcl8sIHF1ZSBlbSBnZXJhbCBjb250ZW1wbGEgbyDDrW5kaWNlIGRvIGxpdnJvLiBFc3NlIGZvcm1hdG8gcG9kZSBtdWRhciBkZSBhY29yZG8gY29tIGNhZGEgbGl2cm8sIG1hcyBhcXVpIHRvZGFzIGFzIG9icmFzIHTDqm0gZXNzYXMgaW5mb3JtYcOnw7VlcyBlIGVsYXMgbsOjbyBzw6NvIMO6dGVpcyBwYXJhIGEgYW7DoWxpc2UuIFJlbW92aSBkYSBzZWd1aW50ZSBmb3JtYToKCmBgYHtyIGhlYWRlci1mb290ZXJ9CmxpdnJvcyA8LSBhcy5kYXRhLnRhYmxlKGxpdnJvcykgJT4lIGZpbHRlcihjaGFwdGVyICE9IDApCmxpdnJvcyA8LSBsaXZyb3NbLCByZW1vdmUgOj0gLkkgJWluJSB3aGljaCh0ZXh0ID09ICJGSU0iKTouTiwgYnkgPSBndXRlbmJlcmdfaWRdCmxpdnJvcyA8LSBsaXZyb3NbcmVtb3ZlID09IEZBTFNFXQpsaXZyb3MgPC0gbGl2cm9zWy0oMTY3MDM6MTY4NzYpXSAlPiUgc2VsZWN0KC1yZW1vdmUpCmBgYAoKQ29tIG9zIGNhcMOtdHVsb3MgaWRlbnRpZmljYWRvcyBhbnRlcmlvcm1lbnRlLCBqw6EgZGV1IHBhcmEgaWRlbnRpZmljYXIgcXVlIG9zIGNhcMOtdHVsb3MgKiowKiogY29udGVtcGxhdmFtIG8gY2FiZcOnYWxobyBkb3MgbGl2cm9zLiBQZW5zYW5kbyBubyByb2RhcMOpLCB0b2RvcyBvcyB0ZXh0b3MgdGVybWluYW0gY29tICJGSU0iIGVudMOjbyBhcyBsaW5oYXMgYWJhaXhvIGRlc3NhIHN0cmluZyBwb2RlcmlhbSBzZXIgcmVtb3ZpZGFzLiBEZXUgY2VydG8gcGFyYSBkdWFzIG9icmFzLCBtYXMgdW1hIGRlbGFzIHRpdmUgcXVlIHJlbW92ZXIgcGVsb3MgbsO6bWVyb3MgZGFzIGxpbmhhcy4KCiMjIyMgSWRlbnRpZmljYW5kbyBzdG9wd29yZHMKCmBgYHtyIHN0b3B3b3Jkc30Kc3RvcF93b3JkcyA8LSBzdG9wd29yZHM6OnN0b3B3b3JkcyhsYW5ndWFnZSA9ICJwdCIpICU+JSBhcy5kYXRhLmZyYW1lKCkKY29sbmFtZXMoc3RvcF93b3JkcykgPC0gIndvcmQiCnN0b3Bfd29yZHMgPC0gCiAgc3RvcF93b3JkcyAlPiUgbXV0YXRlKHdvcmQgPSBzdHJpbmdpOjpzdHJpX3RyYW5zX2dlbmVyYWwod29yZCwgIkxhdGluLUFTQ0lJIikpICU+JQogIGFkZF9yb3cod29yZCA9IGMoImVsbGUiLCAiZWxsYSIsICJ0YW8iLCAiY2FwaXR1bG8iLCAiZCIpKQpgYGAKCkFzIF9zdG9wd29yZHNfIHPDo28gb3V0cm9zIGVsZW1lbnRvcyBxdWUgbsOjbyBjb250cmlidWVtIHBhcmEgYSBhbsOhbGlzZTogc8OjbyBwYWxhdnJhcyBjb21vICJkZSIsICJvL2EiLCAibWV1IiBldGMuIFRhbWLDqW0gYWRpY2lvbmVpIDUgcGFsYXZyYXMgcXVlIGlkZW50aWZpcXVlaSBub3MgdGV4dG9zIGUgcXVlIG7Do28gdHJhemVtIG5lbmh1bWEgaW5mb3JtYcOnw6NvIGludGVyZXNzYW50ZS4gw4kgaW50ZXJlc3NhbnRlIG5vdGFyIHF1ZSBhZGljaW9uZWkgImVsbGUvZWxsYSIgZGV2aWRvIMOgIGVzY3JpdGEgZGEgw6lwb2NhIGRvcyBsaXZyb3MgZGUgTWFjaGFkbyBkZSBBc3Npcy4gRXNzYXMgcGFsYXZyYXMgc2Vyw6NvIHJlbW92aWRhcyBubyBwcsOzeGltbyBwYXNzby4KCiMjIyMjIEZvcm1hdG8gX3RpZHlfCgpVbWEgZGFzIGZpbG9zb2ZpYXMgYWRvdGFkYXMgcGVsb3MgdXN1w6FyaW9zIGRvIFIgw6kgbyBmb3JtYXRvIF90aWR5XyBkb3MgZGFkb3MsIG5vIHF1YWwgY2FkYSB2YXJpw6F2ZWwgw6kgdW1hIGNvbHVuYSBlIGNhZGEgb2JzZXJ2YcOnw6NvIMOpIHVtYSBsaW5oYS4gUG9kZW1vcyBhcGxpY2FyIGVzc2UgbWVzbW8gcHJpbmPDrXBpbyBwYXJhIGRhZG9zIHRleHR1YWlzIGNvbSBvIHBhY290ZSBgdGlkeXRleHRgLiBFc2NvbGhpIGNvbW8gX3Rva2VuXyBwYWxhdnJhcyBwb3JxdWUgc8OjbyBhIHVuaWRhZGUgbWFpcyBpbnRlcmVzc2FudGUgcGFyYSBhbsOhbGlzZSBuZXNzZSBjb250ZXh0by4KCmBgYHtyIHRpZHlpbmd9CnRpZHlfbWFjaGFkbyA8LSAKICBsaXZyb3MgJT4lIHVubmVzdF90b2tlbnMod29yZCwgdGV4dCkgJT4lIAogIGFudGlfam9pbihzdG9wX3dvcmRzKQoKaGVhZCh0aWR5X21hY2hhZG8pCmBgYAoKIyMjIyMgTGVtbWF0aXphw6fDo28KCkVzc2UgcHJvY2Vzc28gY29uc2lzdGUgZW0gcmV0aXJhciBhIGZsZXjDo28gZG8gdmVyYm8sIGNvbW8gcG9yIGV4ZW1wbG86IGNhbWluaGFuZG8gJFxyaWdodGFycm93JCBjYW1pbmhhci4gRmF6ZXIgaXNzbyBwZXJtaXRlIGFncmVnYXIgZXNzYXMgZGlmZXJlbnRlcyBmbGV4w7VlcyBlbSB1bWEgcGFsYXZyYSBzw7MsIHF1ZSBhZ3JlZ2EgbWFpcyBwYXJhIGVzc2EgYW7DoWxpc2UuIEZlbGl6bWVudGUsIG8gcGFjb3RlIGB1ZHBpcGVgIGZheiBpc3NvIGNvbSBiYXN0YW50ZSBmYWNpbGlkYWRlIGUgcmFwaWRleiBwYXJhIGFzIG9icmFzIGVtIHF1ZXN0w6NvLgoKYGBge3IgbGVtbWF9CmJvb2tzX3VkcGlwZSA8LSB1ZHBpcGVfYW5ub3RhdGUodWRwX21vZGVsLCBwdWxsKHRpZHlfbWFjaGFkbywgd29yZCksIHRva2VuaXplciA9ICJ2ZXJ0aWNhbCIpICU+JSBhcy5kYXRhLmZyYW1lKCkKaGVhZChib29rc191ZHBpcGUpCmBgYAoKIyMjIyMgRXRhcGEgZmluYWwgZGEgcHJlcGFyYcOnw6NvCgpBcXVpLCBtYW50aXZlIGFwZW5hcyB2YXJpw6F2ZWlzIGludGVyZXNzYW50ZXMgZSBhY3Jlc2NlbnRlaSBvIG5vbWUgZG9zIGxpdnJvcy4KCmBgYHtyIGRhdGEtZnJhbWUtcHJlcGFyYWRvfQpwcm9jZXNzZWRfbWFjaGFkbyA8LSAKICB0aWR5X21hY2hhZG8gJT4lIAogIGJpbmRfY29scyhib29rc191ZHBpcGUpICU+JSAKICBzZWxlY3QoZ3V0ZW5iZXJnX2lkLCBjaGFwdGVyLCB3b3JkLCBsZW1tYSwgdXBvcykgJT4lIAogIG11dGF0ZShib29rID0gZmFjdG9yKGNhc2Vfd2hlbihndXRlbmJlcmdfaWQgPT0gNTU2ODIgfiAiUXVpbmNhcyBCb3JiYSAoMTg5MSkiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBndXRlbmJlcmdfaWQgPT0gNTQ4MjkgfiAiTWVtw7NyaWFzIFDDs3N0dW1hcyBkZSBCcsOhcyBDdWJhcyAoMTg4MSkiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBndXRlbmJlcmdfaWQgPT0gNTU3NTIgfiAiRG9tIENhc211cnJvICgxODk5KSIpLCAKICAgICAgICAgICAgICAgICAgICAgICBsZXZlbHMgPSBjKCJNZW3Ds3JpYXMgUMOzc3R1bWFzIGRlIEJyw6FzIEN1YmFzICgxODgxKSIsICJRdWluY2FzIEJvcmJhICgxODkxKSIsICJEb20gQ2FzbXVycm8gKDE4OTkpIikpKQoKaGVhZChwcm9jZXNzZWRfbWFjaGFkbykKYGBgCgojIyMgVmlzdWFsaXphbmRvIGZyZXF1w6puY2lhcwoKYGBge3IgbW9zdC1jb21tb259CnByb2Nlc3NlZF9tYWNoYWRvICU+JQogIGdyb3VwX2J5KGJvb2spICU+JSAKICBjb3VudCh3b3JkLCBzb3J0ID0gVFJVRSkgJT4lIAogIG11dGF0ZSh3b3JkID0gcmVvcmRlcl93aXRoaW4od29yZCwgbiwgYm9vaykpICU+JSAKICB0b3BfbihuID0gMjUpICU+JQogIGdncGxvdChhZXMoeCA9IG4sIHkgPSB3b3JkLCBmaWxsID0gYm9vaykpICsKICBnZW9tX2NvbChzaG93LmxlZ2VuZCA9IEZBTFNFKSArCiAgc2NhbGVfeV9yZW9yZGVyZWQoKSArCiAgZmFjZXRfd3JhcCh+Ym9vaywgc2NhbGVzID0gImZyZWUiKSArCiAgc2NhbGVfZmlsbF92aXJpZGlzX2Qob3B0aW9uID0gImNpdmlkaXMiLCBiZWdpbiA9IDAuMzQsIGVuZCA9IDAuOTQpICsKICB0aGVtZV9maXZldGhpcnR5ZWlnaHQoKQpgYGAKCgoKIyMjIEFuw6FsaXNlIGRlIHNlbnRpbWVudG8KIyMjIFByZXBhcmFuZG8uLi4gZGUgbm92byEKIyMjIFTDs3BpY29zIGxhdGVudGVzCiMjIENvbmNsdXPDo28KIyMgUmVmZXLDqm5jaWFzCgotIFRleHQgbWluaW5nIHdpdGggUjogaHR0cHM6Ly93d3cudGlkeXRleHRtaW5pbmcuY29tL2luZGV4Lmh0bWwKCi0gQW4gaW50cm9kdWN0aW9uIHRvIFRleHQgcHJvY2Vzc2luZyBhbmQgQW5hbHlzaXMgd2l0aCBSOiBodHRwczovL20tY2xhcmsuZ2l0aHViLmlvL3RleHQtYW5hbHlzaXMtd2l0aC1SL2ludHJvLmh0bWwKCi0gVURQaXBlIE5hdHVyYWwgTGFuZ3VhZ2UgUHJvY2Vzc2luZyAtIFRvcGljIE1vZGVsbGluZyBVc2UgQ2FzZXM6IGh0dHBzOi8vY3Jhbi5yLXByb2plY3Qub3JnL3dlYi9wYWNrYWdlcy91ZHBpcGUvdmlnbmV0dGVzL3VkcGlwZS11c2VjYXNlLXRvcGljbW9kZWxsaW5nLmh0bWwKCi0gZ3V0ZW5iZXJncjogU2VhcmNoIGFuZCBkb3dubG9hZCBwdWJsaWMgZG9tYWluIHRleHRzIGZyb20gUHJvamVjdCBHdXRlbmJlcmc6IGh0dHBzOi8vY3Jhbi5yLXByb2plY3Qub3JnL3dlYi9wYWNrYWdlcy9ndXRlbmJlcmdyL3ZpZ25ldHRlcy9pbnRyby5odG1sCgotIEludHJvZHXDp8OjbyBhIE5MVEsgY29tIERvbSBDYXNtdXJybzogaHR0cHM6Ly9tZWRpdW0uY29tL3R1cmluZy10YWxrcy91bWEtYW4lQzMlQTFsaXNlLWRlLWRvbS1jYXNtdXJyby1jb20tbmx0ay0zNDNkNzJkZDQ3YTc=</div>
 
 
 

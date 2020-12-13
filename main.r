@@ -55,19 +55,26 @@ tidy_machado <-
 # lemmatization 
 books_udpipe <- udpipe_annotate(udp_model, pull(tidy_machado, word), tokenizer = "vertical") %>% as.data.frame()
 
+
 processed_machado <- 
-  tidy_machado %>% bind_cols(books_udpipe) %>% select(gutenberg_id, chapter, word, lemma, upos) %>% 
+  tidy_machado %>% 
+  bind_cols(books_udpipe) %>% 
+  select(gutenberg_id, chapter, word, lemma, upos) %>% 
   mutate(book = factor(case_when(gutenberg_id == 55682 ~ "Quincas Borba (1891)",
                                     gutenberg_id == 54829 ~ "Memórias Póstumas de Brás Cubas (1881)",
                                     gutenberg_id == 55752 ~ "Dom Casmurro (1899)"), 
                        levels = c("Memórias Póstumas de Brás Cubas (1881)", "Quincas Borba (1891)", "Dom Casmurro (1899)")))
 
-processed_machado %>%
+# most common word per book
+most_commom <- 
+  processed_machado %>%
   group_by(book) %>% 
   count(word, sort = TRUE) %>% 
+  mutate(word = reorder_within(word, n, book)) %>% 
   top_n(n = 25) %>%
-  ggplot(aes(x = n, y = reorder(word, n), fill = book)) +
+  ggplot(aes(x = n, y = word, fill = book)) +
   geom_col(show.legend = FALSE) +
+  scale_y_reordered() +
   facet_wrap(~book, scales = "free") +
   scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
   theme_fivethirtyeight()
@@ -82,7 +89,7 @@ sent <-
   filter(sentimento != 0) %>% 
   mutate(sentimento_cat = ifelse(sentimento < 0, "Negativo", "Positivo"))
 
-# Beautiful plots :-)
+# beautiful plots :-)
 
 sent_plot_dc <- 
   sent %>% 
@@ -121,6 +128,7 @@ sent_cumulative <-
 
 # Topic model ----
 
+# raw 
 tidy_count <- tidy_machado %>% 
   group_by(gutenberg_id) %>% 
   count(word, sort = TRUE) %>% ungroup() %>% rename("document" = "gutenberg_id")
@@ -134,7 +142,7 @@ machado_topics <- tidy(fit_lda, matrix = "beta")
 
 machado_top_terms <- machado_topics %>%
   group_by(topic) %>%
-  top_n(5, beta) %>%
+  top_n(15, beta) %>%
   ungroup() %>%
   arrange(topic, -beta)
 
@@ -147,13 +155,46 @@ machado_top_terms %>%
   scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
   theme_fivethirtyeight()
 
-beta_spread <- machado_topics %>%
-  mutate(topic = paste0("topic", topic)) %>%
-  spread(topic, beta) %>%
-  filter(topic1 > .001 | topic2 > .001) %>%
-  mutate(log_ratio = log2(topic2 / topic1))  
+# nouns only
+tidy_count_nouns <- 
+  processed_machado %>% 
+  filter(upos == "NOUN" | word == "capitu") %>%
+  group_by(gutenberg_id) %>%
+  count(word, sort = TRUE) %>%
+  ungroup() %>% 
+  rename("document" = "gutenberg_id")
 
-beta_spread %>% 
-  top_n(20) %>% 
-  ggplot(aes(x = log_ratio, y = term)) +
-  geom_col()
+dtm_noun <- tidy_count_nouns %>% cast_dtm(term = word, document = document,  value = n)
+
+fit_lda_noun <- LDA(dtm_noun, k = 3, control = list(seed = 758))
+fit_lda_noun
+
+machado_topics_nouns <- tidy(fit_lda_noun, matrix = "beta")
+
+machado_top_nouns <- machado_topics_nouns %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+# more interesting than the raw corpus!
+machado_top_nouns %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered() +
+  scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
+  theme_fivethirtyeight()
+
+book_names <- c("55682" = "Quincas Borba (1891)", "54829" = "Memórias Póstumas de Brás Cubas (1881)", "55752" = "Dom Casmurro (1899)")
+
+# gamma probabilities
+tidy(fit_lda_noun, matrix = "gamma") %>%
+  mutate(document = reorder(document, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma)) +
+  geom_boxplot() +
+  facet_wrap(~ document, labeller = labeller(document = book_names)) +
+  scale_fill_viridis_d(option = "cividis", begin = 0.34, end = 0.94) +
+  theme_fivethirtyeight()
+

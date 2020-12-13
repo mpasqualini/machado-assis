@@ -1,0 +1,63 @@
+---
+title: 'Análise textual: Machado de Assis'
+author: "Mariana de Castro Pasqualini"
+date: "13/12/2020"
+output:
+  html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Motivação
+### Versão do R e pacotes:
+
+```{r packages, message=FALSE, warning=FALSE}
+R.version.string
+
+library(tidyverse)
+library(data.table)
+library(tidytext)
+library(lexiconPT)
+library(gutenbergr)
+library(udpipe)
+library(ggthemes)
+library(viridis)
+library(topicmodels)
+```
+## Análise
+### Obtendo os dados
+
+Ao invés de ler arquivos de texto para obter os livros, aproveitei o pacote do R `gutenbergr` que permite fazer o download de obras disponibilizadas pelo [Projeto Gutenberg](https://www.gutenberg.org/). É possível obter mais de um livro com apenas uma chamada da função, a partir do identificador da obra: `55682` refere-se ao livro **Quincas Borba (1891)**, `54829` ao **Memórias Póstumas de Brás Cubas (1881)**, `55752` é a obra **Dom Casmurro (1899)**.
+```{r getting-books, message=FALSE, warning=FALSE}
+livros_machado <- gutenberg_download(c(55752, 55682, 54829))
+head(livros_machado, n = 10)
+```
+
+Logo de início, conseguimos identificar que os caracteres especiais não foram lidos corretamente e que o formato do texto não parece adequado para análise. Além disso, é legal ter em mente que as primeiras linhas são o header do texto, ou seja, informações sobre o autor, publicação e editora, que não vão agregar na análise. Voltarei nisso mais adiante.
+
+Também fiz o download do modelo de tags de POS (_part of speech_), que usei para o processo de lemmatização e obtenção das tags de _adjetivo_, _substantivo_ etc.
+
+```{r udp-model}
+udp_model <- udpipe_download_model(language = "portuguese")
+udp_model <- udpipe_load_model(udp_model)
+```
+
+
+### Preparando
+### Análise de sentimento
+### Preparando... de novo!
+### Tópicos latentes
+## Conclusão
+## Referências
+
+- Text mining with R: https://www.tidytextmining.com/index.html
+
+- An introduction to Text processing and Analysis with R: https://m-clark.github.io/text-analysis-with-R/intro.html
+
+- UDPipe Natural Language Processing - Topic Modelling Use Cases: https://cran.r-project.org/web/packages/udpipe/vignettes/udpipe-usecase-topicmodelling.html
+
+- gutenbergr: Search and download public domain texts from Project Gutenberg: https://cran.r-project.org/web/packages/gutenbergr/vignettes/intro.html
+
+- Introdução a NLTK com Dom Casmurro: https://medium.com/turing-talks/uma-an%C3%A1lise-de-dom-casmurro-com-nltk-343d72dd47a7
